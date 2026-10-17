@@ -307,8 +307,13 @@ async def security_headers_middleware(request: Request, call_next):
         response.headers["Pragma"] = "no-cache"
     return response
 
-app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+os.makedirs(STATIC_DIR, exist_ok=True)
+app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
+
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 def get_current_user(request: Request) -> Optional[dict]:
     session_token = request.cookies.get("danyaclient_session") or request.cookies.get("recoin_session")
