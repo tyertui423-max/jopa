@@ -82,7 +82,7 @@ def verify_backup_auth(request: Request):
 
     raise HTTPException(
         status_code=403, 
-        detail="Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ: РЅРµРІРµСЂРЅС‹Р№ СЃРµРєСЂРµС‚РЅС‹Р№ РєР»СЋС‡ СЃРёРЅС…СЂРѕРЅРёР·Р°С†РёРё РёР»Рё РѕС‚СЃСѓС‚СЃС‚РІСѓСЋС‚ РїСЂР°РІР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°."
+        detail="Доступ запрещён: неверный секретный ключ синхронизации или отсутствуют права администратора."
     )
 
 def is_subscription_active(user_dict: Optional[dict]) -> bool:
@@ -94,7 +94,7 @@ def is_subscription_active(user_dict: Optional[dict]) -> bool:
         return False
     if not until or str(until).strip().lower() in ["unavailable", "none", "expired", ""]:
         return False
-    if str(until).strip().lower() in ["forever", "lifetime", "РЅР°РІСЃРµРіРґР°"]:
+    if str(until).strip().lower() in ["forever", "lifetime", "навсегда"]:
         return True
     try:
         exp_dt = datetime.strptime(str(until).strip(), "%d.%m.%Y")
@@ -255,7 +255,7 @@ class SecurityManager:
             if remaining > 0:
                 raise HTTPException(
                     status_code=429,
-                    detail=f"РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ РЅРµСѓРґР°С‡РЅС‹С… РїРѕРїС‹С‚РѕРє РІС…РѕРґР°. Р”РѕСЃС‚СѓРї СЃ РІР°С€РµРіРѕ IP Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РЅР° {remaining} СЃРµРє."
+                    detail=f"Слишком много неудачных попыток входа. Доступ с вашего IP заблокирован на {remaining} сек."
                 )
             del self.login_lockouts[ip]
             self.failed_logins[ip] = []
@@ -268,7 +268,7 @@ class SecurityManager:
             self.login_lockouts[ip] = now + 900  # 15 minutes
             raise HTTPException(
                 status_code=429,
-                detail="РџСЂРµРІС‹С€РµРЅ Р»РёРјРёС‚ РїРѕРїС‹С‚РѕРє РІС…РѕРґР° (5 РѕС€РёР±РѕРє РїРѕРґСЂСЏРґ). Р”РѕСЃС‚СѓРї РІСЂРµРјРµРЅРЅРѕ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РЅР° 15 РјРёРЅСѓС‚ РґР»СЏ Р·Р°С‰РёС‚С‹ Р°РєРєР°СѓРЅС‚Р°."
+                detail="Превышен лимит попыток входа (5 ошибок подряд). Доступ временно заблокирован на 15 минут для защиты аккаунта."
             )
 
     def record_successful_login(self, ip: str):
@@ -281,7 +281,7 @@ class SecurityManager:
         if len(self.register_attempts[ip]) >= 5:
             raise HTTPException(
                 status_code=429,
-                detail="РџСЂРµРІС‹С€РµРЅ Р»РёРјРёС‚ СЂРµРіРёСЃС‚СЂР°С†РёР№ СЃ РѕРґРЅРѕРіРѕ IP (РјР°РєСЃРёРјСѓРј 5 РІ С‡Р°СЃ). Р—Р°С‰РёС‚Р° РѕС‚ СЃРїР°РјР°."
+                detail="Превышен лимит регистраций с одного IP (максимум 5 в час). Защита от спама."
             )
         self.register_attempts[ip].append(now)
 
@@ -292,7 +292,7 @@ class SecurityManager:
             if remaining > 0:
                 raise HTTPException(
                     status_code=429,
-                    detail=f"РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ РЅРµРІРµСЂРЅС‹С… РїРѕРїС‹С‚РѕРє РІРІРѕРґР° РєР»СЋС‡Р°. Р¤СѓРЅРєС†РёСЏ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅР° РЅР° {remaining} СЃРµРє."
+                    detail=f"Слишком много неверных попыток ввода ключа. Функция заблокирована на {remaining} сек."
                 )
             del self.key_lockouts[ip]
             self.failed_keys[ip] = []
@@ -305,7 +305,7 @@ class SecurityManager:
             self.key_lockouts[ip] = now + 600  # 10 minutes
             raise HTTPException(
                 status_code=429,
-                detail="РџСЂРµРІС‹С€РµРЅ Р»РёРјРёС‚ РѕС€РёР±РѕРє РІРІРѕРґР° РєР»СЋС‡Р°. РђРєС‚РёРІР°С†РёСЏ РєР»СЋС‡РµР№ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅР° РЅР° 10 РјРёРЅСѓС‚."
+                detail="Превышен лимит ошибок ввода ключа. Активация ключей заблокирована на 10 минут."
             )
 
     def record_successful_key(self, ip: str):
@@ -327,6 +327,14 @@ async def security_headers_middleware(request: Request, call_next):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
         response.headers["Pragma"] = "no-cache"
     return response
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers={"Content-Type": "application/json; charset=utf-8"}
+    )
 
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
@@ -382,9 +390,9 @@ def get_current_user(request: Request) -> Optional[dict]:
 def require_admin(request: Request) -> dict:
     user = get_current_user(request)
     if not user:
-        raise HTTPException(status_code=401, detail="РўСЂРµР±СѓРµС‚СЃСЏ Р°РІС‚РѕСЂРёР·Р°С†РёСЏ РІ СЃРёСЃС‚РµРјРµ")
+        raise HTTPException(status_code=401, detail="Требуется авторизация в системе")
     if user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰РµРЅ. РўСЂРµР±СѓСЋС‚СЃСЏ РїСЂР°РІР° РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°.")
+        raise HTTPException(status_code=403, detail="Доступ запрещен. Требуются права Администратора.")
     return user
 
 @app.get("/", response_class=HTMLResponse)
@@ -450,14 +458,14 @@ async def api_register(payload: RegisterPayload, request: Request, response: Res
     if not re.match(r"^[a-zA-Z0-9_]{3,24}$", username):
         raise HTTPException(
             status_code=400, 
-            detail="РРјСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РґРѕР»Р¶РЅРѕ СЃРѕРґРµСЂР¶Р°С‚СЊ РѕС‚ 3 РґРѕ 24 СЃРёРјРІРѕР»РѕРІ (С‚РѕР»СЊРєРѕ Р»Р°С‚РёРЅРёС†Р°, С†РёС„СЂС‹ Рё СЃРёРјРІРѕР» _)"
+            detail="Имя пользователя должно содержать от 3 до 24 символов (только латиница, цифры и символ _)"
         )
     if "@" not in email or "." not in email:
-        raise HTTPException(status_code=400, detail="РЈРєР°Р¶РёС‚Рµ РєРѕСЂСЂРµРєС‚РЅС‹Р№ email Р°РґСЂРµСЃ")
+        raise HTTPException(status_code=400, detail="Укажите корректный email адрес")
     if len(password) < 8:
-        raise HTTPException(status_code=400, detail="РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РјРµРЅРµРµ 8 СЃРёРјРІРѕР»РѕРІ")
+        raise HTTPException(status_code=400, detail="Пароль должен быть не менее 8 символов")
     if password != payload.confirm_password:
-        raise HTTPException(status_code=400, detail="РџР°СЂРѕР»Рё РЅРµ СЃРѕРІРїР°РґР°СЋС‚")
+        raise HTTPException(status_code=400, detail="Пароли не совпадают")
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -465,7 +473,7 @@ async def api_register(payload: RegisterPayload, request: Request, response: Res
     existing = cursor.fetchone()
     if existing:
         conn.close()
-        raise HTTPException(status_code=400, detail="РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј РЅРёРєРЅРµР№РјРѕРј РёР»Рё email СѓР¶Рµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ")
+        raise HTTPException(status_code=400, detail="Пользователь с таким никнеймом или email уже зарегистрирован")
 
     pwd_hash, salt = hash_password(password)
 
@@ -518,19 +526,19 @@ async def api_login(payload: LoginPayload, request: Request, response: Response)
     if not user:
         conn.close()
         security.record_failed_login(client_ip)
-        raise HTTPException(status_code=400, detail="РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ/email РёР»Рё РїР°СЂРѕР»СЊ")
+        raise HTTPException(status_code=400, detail="Неверный логин/email или пароль")
 
     # Enforce site ban
     if user["is_banned"] == 1:
         conn.close()
-        reason = user["ban_reason"] or "РќР°СЂСѓС€РµРЅРёРµ РїСЂР°РІРёР» РїСЂРѕРµРєС‚Р°"
-        raise HTTPException(status_code=403, detail=f"Р’Р°С€ Р°РєРєР°СѓРЅС‚ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РЅР° СЃР°Р№С‚Рµ: {reason}")
+        reason = user["ban_reason"] or "Нарушение правил проекта"
+        raise HTTPException(status_code=403, detail=f"Ваш аккаунт заблокирован на сайте: {reason}")
 
     check_hash, _ = hash_password(password, user["salt"])
     if check_hash != user["password_hash"]:
         conn.close()
         security.record_failed_login(client_ip)
-        raise HTTPException(status_code=400, detail="РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ/email РёР»Рё РїР°СЂРѕР»СЊ")
+        raise HTTPException(status_code=400, detail="Неверный логин/email или пароль")
 
     security.record_successful_login(client_ip)
     session_token = secrets.token_urlsafe(32)
@@ -571,11 +579,11 @@ async def api_activate_key(payload: ActivateKeyPayload, request: Request):
 
     user = get_current_user(request)
     if not user:
-        raise HTTPException(status_code=401, detail="РўСЂРµР±СѓРµС‚СЃСЏ Р°РІС‚РѕСЂРёР·Р°С†РёСЏ")
+        raise HTTPException(status_code=401, detail="Требуется авторизация")
     
     key = payload.key.strip().upper()
     if not key or len(key) < 5:
-        raise HTTPException(status_code=400, detail="РќРµРІРµСЂРЅС‹Р№ С„РѕСЂРјР°С‚ РєР»СЋС‡Р°. РџСЂРѕРІРµСЂСЊС‚Рµ РїСЂР°РІРёР»СЊРЅРѕСЃС‚СЊ РІРІРѕРґР°.")
+        raise HTTPException(status_code=400, detail="Неверный формат ключа. Проверьте правильность ввода.")
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -588,12 +596,12 @@ async def api_activate_key(payload: ActivateKeyPayload, request: Request):
     if not db_key:
         conn.close()
         security.record_failed_key(client_ip)
-        raise HTTPException(status_code=400, detail="Р›РёС†РµРЅР·РёРѕРЅРЅС‹Р№ РєР»СЋС‡ РЅРµ РЅР°Р№РґРµРЅ. РџСЂРѕРІРµСЂСЊС‚Рµ РїСЂР°РІРёР»СЊРЅРѕСЃС‚СЊ СЃРёРјРІРѕР»РѕРІ.")
+        raise HTTPException(status_code=400, detail="Лицензионный ключ не найден. Проверьте правильность символов.")
 
     if db_key["is_used"] == 1:
         conn.close()
         security.record_failed_key(client_ip)
-        raise HTTPException(status_code=400, detail=f"Р­С‚РѕС‚ Р»РёС†РµРЅР·РёРѕРЅРЅС‹Р№ РєР»СЋС‡ СѓР¶Рµ Р±С‹Р» Р°РєС‚РёРІРёСЂРѕРІР°РЅ СЂР°РЅРµРµ.")
+        raise HTTPException(status_code=400, detail=f"Этот лицензионный ключ уже был активирован ранее.")
     
     security.record_successful_key(client_ip)
     k_type = db_key["key_type"]
@@ -607,7 +615,7 @@ async def api_activate_key(payload: ActivateKeyPayload, request: Request):
         cursor.execute("UPDATE users SET hwid = NULL WHERE id = ?", (user["id"],))
         conn.commit()
         conn.close()
-        return {"status": "ok", "message": "HWID СѓСЃРїРµС€РЅРѕ СЃР±СЂРѕС€РµРЅ!", "hwid": "вЂ”"}
+        return {"status": "ok", "message": "HWID успешно сброшен!", "hwid": "—"}
     elif k_type == "Lifetime":
         sub_type = "Lifetime"
         until = "Forever"
@@ -623,7 +631,7 @@ async def api_activate_key(payload: ActivateKeyPayload, request: Request):
     conn.close()
     return {
         "status": "ok",
-        "message": f"Р›РёС†РµРЅР·РёСЏ {sub_type} СѓСЃРїРµС€РЅРѕ Р°РєС‚РёРІРёСЂРѕРІР°РЅР°!",
+        "message": f"Лицензия {sub_type} успешно активирована!",
         "subscription": sub_type,
         "subscription_until": until,
         "has_active_sub": True
@@ -637,7 +645,7 @@ async def api_download_launcher(request: Request):
     if not user.get("has_active_sub"):
         raise HTTPException(
             status_code=403, 
-            detail="РЎРєР°С‡РёРІР°РЅРёРµ Р»Р°СѓРЅС‡РµСЂР° РґРѕСЃС‚СѓРїРЅРѕ С‚РѕР»СЊРєРѕ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏРј СЃ Р°РєС‚РёРІРЅРѕР№ РїРѕРґРїРёСЃРєРѕР№."
+            detail="Скачивание лаунчера доступно только пользователям с активной подпиской."
         )
     
     custom_url = get_launcher_url()
@@ -696,7 +704,7 @@ async def api_reset_hwid(request: Request):
     cursor.execute("UPDATE users SET hwid = NULL WHERE id = ?", (user["id"],))
     conn.commit()
     conn.close()
-    return {"status": "ok", "message": "HWID reset successfully", "hwid": "вЂ”"}
+    return {"status": "ok", "message": "HWID reset successfully", "hwid": "—"}
 
 class BannerPayload(BaseModel):
     banner_url: str
@@ -786,13 +794,13 @@ async def api_admin_get_users(request: Request):
 class BanPayload(BaseModel):
     user_id: int
     is_banned: bool
-    ban_reason: Optional[str] = "РќР°СЂСѓС€РµРЅРёРµ РїСЂР°РІРёР» РїСЂРѕРµРєС‚Р°"
+    ban_reason: Optional[str] = "Нарушение правил проекта"
 
 @app.post("/api/admin/users/ban")
 async def api_admin_ban_user(payload: BanPayload, request: Request):
     admin = require_admin(request)
     if payload.user_id == admin["id"]:
-        raise HTTPException(status_code=400, detail="РќРµР»СЊР·СЏ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ СЃРѕР±СЃС‚РІРµРЅРЅС‹Р№ Р°РєРєР°СѓРЅС‚ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°")
+        raise HTTPException(status_code=400, detail="Нельзя заблокировать собственный аккаунт администратора")
     
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -801,19 +809,19 @@ async def api_admin_ban_user(payload: BanPayload, request: Request):
     target = cursor.fetchone()
     if not target:
         conn.close()
-        raise HTTPException(status_code=404, detail="РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     
     if target["username"] == "INOAGENT":
         conn.close()
-        raise HTTPException(status_code=400, detail="РќРµР»СЊР·СЏ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ РіР»Р°РІРЅРѕРіРѕ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР° INOAGENT")
+        raise HTTPException(status_code=400, detail="Нельзя заблокировать главного администратора INOAGENT")
     
     if payload.is_banned:
-        cursor.execute("UPDATE users SET is_banned = 1, ban_reason = ? WHERE id = ?", (payload.ban_reason or "РќР°СЂСѓС€РµРЅРёРµ РїСЂР°РІРёР»", payload.user_id))
+        cursor.execute("UPDATE users SET is_banned = 1, ban_reason = ? WHERE id = ?", (payload.ban_reason or "Нарушение правил", payload.user_id))
         cursor.execute("DELETE FROM sessions WHERE user_id = ?", (payload.user_id,))
-        msg = f"РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ {target['username']} СѓСЃРїРµС€РЅРѕ Р·Р°Р±Р»РѕРєРёСЂРѕРІР°РЅ РЅР° СЃР°Р№С‚Рµ."
+        msg = f"Пользователь {target['username']} успешно заблокирован на сайте."
     else:
         cursor.execute("UPDATE users SET is_banned = 0, ban_reason = NULL WHERE id = ?", (payload.user_id,))
-        msg = f"РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ {target['username']} СѓСЃРїРµС€РЅРѕ СЂР°Р·Р±Р»РѕРєРёСЂРѕРІР°РЅ."
+        msg = f"Пользователь {target['username']} успешно разблокирован."
     
     conn.commit()
     conn.close()
@@ -828,7 +836,7 @@ async def api_admin_set_role(payload: RolePayload, request: Request):
     admin = require_admin(request)
     new_role = payload.role.strip().lower()
     if new_role not in ["user", "admin"]:
-        raise HTTPException(status_code=400, detail="РќРµРґРѕРїСѓСЃС‚РёРјР°СЏ СЂРѕР»СЊ. Р”РѕСЃС‚СѓРїРЅРѕ: user, admin")
+        raise HTTPException(status_code=400, detail="Недопустимая роль. Доступно: user, admin")
     
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -837,20 +845,20 @@ async def api_admin_set_role(payload: RolePayload, request: Request):
     target = cursor.fetchone()
     if not target:
         conn.close()
-        raise HTTPException(status_code=404, detail="РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµ РЅР°Р№РґРµРЅ")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
     
     if target["username"] == "INOAGENT" and new_role != "admin":
         conn.close()
-        raise HTTPException(status_code=400, detail="РќРµР»СЊР·СЏ СЃРЅСЏС‚СЊ СЂРѕР»СЊ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР° СЃ INOAGENT")
+        raise HTTPException(status_code=400, detail="Нельзя снять роль администратора с INOAGENT")
 
     if payload.user_id == admin["id"] and new_role != "admin":
         conn.close()
-        raise HTTPException(status_code=400, detail="РќРµР»СЊР·СЏ СЃРЅСЏС‚СЊ РїСЂР°РІР° Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР° СЃ СЃР°РјРѕРіРѕ СЃРµР±СЏ")
+        raise HTTPException(status_code=400, detail="Нельзя снять права администратора с самого себя")
     
     cursor.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, payload.user_id))
     conn.commit()
     conn.close()
-    return {"status": "ok", "message": f"Р РѕР»СЊ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ {target['username']} РёР·РјРµРЅРµРЅР° РЅР° {new_role}", "role": new_role}
+    return {"status": "ok", "message": f"Роль пользователя {target['username']} изменена на {new_role}", "role": new_role}
 
 class AdminResetHwidPayload(BaseModel):
     user_id: int
@@ -863,7 +871,7 @@ async def api_admin_reset_user_hwid(payload: AdminResetHwidPayload, request: Req
     cursor.execute("UPDATE users SET hwid = NULL WHERE id = ?", (payload.user_id,))
     conn.commit()
     conn.close()
-    return {"status": "ok", "message": "HWID РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ СѓСЃРїРµС€РЅРѕ СЃР±СЂРѕС€РµРЅ"}
+    return {"status": "ok", "message": "HWID пользователя успешно сброшен"}
 
 class AdminSubPayload(BaseModel):
     user_id: int
@@ -888,7 +896,7 @@ async def api_admin_set_sub(payload: AdminSubPayload, request: Request):
     cursor.execute("UPDATE users SET subscription = ?, subscription_until = ? WHERE id = ?", (sub, until, payload.user_id))
     conn.commit()
     conn.close()
-    return {"status": "ok", "message": f"РџРѕРґРїРёСЃРєР° РѕР±РЅРѕРІР»РµРЅР°: {sub} ({until})", "subscription": sub, "subscription_until": until}
+    return {"status": "ok", "message": f"Подписка обновлена: {sub} ({until})", "subscription": sub, "subscription_until": until}
 
 @app.get("/api/admin/keys")
 async def api_admin_get_keys(request: Request):
@@ -939,7 +947,7 @@ async def api_admin_create_keys(payload: CreateKeysPayload, request: Request):
 
     conn.commit()
     conn.close()
-    return {"status": "ok", "message": f"РЎРіРµРЅРµСЂРёСЂРѕРІР°РЅРѕ {count} РєР»СЋС‡РµР№ ({k_type})", "keys": created_keys, "count": count, "key_type": k_type}
+    return {"status": "ok", "message": f"Сгенерировано {count} ключей ({k_type})", "keys": created_keys, "count": count, "key_type": k_type}
 
 @app.delete("/api/admin/keys/{key_id}")
 async def api_admin_delete_key(key_id: int, request: Request):
@@ -951,8 +959,8 @@ async def api_admin_delete_key(key_id: int, request: Request):
     conn.commit()
     conn.close()
     if rows == 0:
-        raise HTTPException(status_code=400, detail="РљР»СЋС‡ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ Р±С‹Р» Р°РєС‚РёРІРёСЂРѕРІР°РЅ")
-    return {"status": "ok", "message": "РљР»СЋС‡ СѓСЃРїРµС€РЅРѕ СѓРґР°Р»РµРЅ"}
+        raise HTTPException(status_code=400, detail="Ключ не найден или уже был активирован")
+    return {"status": "ok", "message": "Ключ успешно удален"}
 
 # ================= LAUNCHER URL ADMIN ENDPOINTS =================
 @app.get("/api/admin/launcher-url")
@@ -968,13 +976,13 @@ async def api_admin_update_launcher_url(payload: LauncherUrlPayload, request: Re
     require_admin(request)
     raw_url = payload.launcher_url.strip()
     if not raw_url:
-        raise HTTPException(status_code=400, detail="РЎСЃС‹Р»РєР° РЅРµ РјРѕР¶РµС‚ Р±С‹С‚СЊ РїСѓСЃС‚РѕР№")
+        raise HTTPException(status_code=400, detail="Ссылка не может быть пустой")
     if not (raw_url.startswith("http://") or raw_url.startswith("https://") or raw_url.startswith("/")):
         raw_url = "https://" + raw_url
     saved_url = set_launcher_url(raw_url)
     return {
         "status": "ok", 
-        "message": "РЎСЃС‹Р»РєР° РЅР° Р»Р°СѓРЅС‡РµСЂ СѓСЃРїРµС€РЅРѕ РѕР±РЅРѕРІР»РµРЅР° Рё Р°РєС‚РёРІРЅР° РґР»СЏ РІСЃРµС… РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№!",
+        "message": "Ссылка на лаунчер успешно обновлена и активна для всех пользователей!",
         "launcher_url": saved_url
     }
 
@@ -992,7 +1000,7 @@ async def api_system_export_db(request: Request):
         pass
 
     if not os.path.exists(DB_PATH):
-        raise HTTPException(status_code=404, detail="Р¤Р°Р№Р» Р±Р°Р·С‹ РґР°РЅРЅС‹С… РЅРµ РЅР°Р№РґРµРЅ")
+        raise HTTPException(status_code=404, detail="Файл базы данных не найден")
 
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     return FileResponse(
@@ -1008,10 +1016,10 @@ async def api_system_restore_db(request: Request):
 
     body_bytes = await request.body()
     if len(body_bytes) < 100:
-        raise HTTPException(status_code=400, detail="Р Р°Р·РјРµСЂ С„Р°Р№Р»Р° СЃР»РёС€РєРѕРј РјР°Р» РґР»СЏ Р±Р°Р·С‹ РґР°РЅРЅС‹С… SQLite")
+        raise HTTPException(status_code=400, detail="Размер файла слишком мал для базы данных SQLite")
 
     if not body_bytes.startswith(b"SQLite format 3\x00"):
-        raise HTTPException(status_code=400, detail="Р—Р°РіСЂСѓР¶РµРЅРЅС‹Р№ С„Р°Р№Р» РЅРµ СЏРІР»СЏРµС‚СЃСЏ РІР°Р»РёРґРЅРѕР№ Р±Р°Р·РѕР№ РґР°РЅРЅС‹С… SQLite")
+        raise HTTPException(status_code=400, detail="Загруженный файл не является валидной базой данных SQLite")
 
     temp_incoming = DB_PATH + ".incoming"
     try:
@@ -1026,7 +1034,7 @@ async def api_system_restore_db(request: Request):
         if not status_row or status_row[0] != "ok":
             test_conn.close()
             os.remove(temp_incoming)
-            raise HTTPException(status_code=400, detail="РћС€РёР±РєР° С†РµР»РѕСЃС‚РЅРѕСЃС‚Рё Р·Р°РіСЂСѓР¶РµРЅРЅРѕР№ Р±Р°Р·С‹ РґР°РЅРЅС‹С…")
+            raise HTTPException(status_code=400, detail="Ошибка целостности загруженной базы данных")
 
         test_c.execute("SELECT COUNT(*) FROM users")
         users_cnt = test_c.fetchone()[0]
@@ -1046,7 +1054,7 @@ async def api_system_restore_db(request: Request):
 
         return {
             "status": "ok",
-            "message": f"Р‘Р°Р·Р° РґР°РЅРЅС‹С… СѓСЃРїРµС€РЅРѕ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР°! Р—Р°РіСЂСѓР¶РµРЅРѕ {users_cnt} РїРѕР»СЊР·РѕРІР°С‚РµР»РµР№ Рё {keys_cnt} РєР»СЋС‡РµР№.",
+            "message": f"База данных успешно восстановлена! Загружено {users_cnt} пользователей и {keys_cnt} ключей.",
             "users_count": users_cnt,
             "keys_count": keys_cnt
         }
@@ -1058,7 +1066,7 @@ async def api_system_restore_db(request: Request):
                 os.remove(temp_incoming)
             except Exception:
                 pass
-        raise HTTPException(status_code=500, detail=f"РћС€РёР±РєР° РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅРёСЏ Р±Р°Р·С‹: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка восстановления базы: {str(e)}")
 
 @app.get("/api/system/backup/info")
 async def api_system_backup_info(request: Request):
@@ -1075,7 +1083,7 @@ async def api_system_backup_info(request: Request):
     keys_cnt = c.fetchone()[0]
     conn.close()
 
-    mtime = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).strftime("%d.%m.%Y %H:%M:%S") if os.path.exists(DB_PATH) else "вЂ”"
+    mtime = datetime.fromtimestamp(os.path.getmtime(DB_PATH)).strftime("%d.%m.%Y %H:%M:%S") if os.path.exists(DB_PATH) else "—"
 
     return {
         "status": "ok",
