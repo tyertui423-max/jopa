@@ -15,14 +15,28 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 DATA_DIR = os.environ.get("DATA_DIR") or os.environ.get("RAILWAY_VOLUME_MOUNT_PATH")
 if not DATA_DIR:
-    if os.path.isdir("/data"):
+    # Check if /data exists and is actually writable
+    if os.path.isdir("/data") and os.access("/data", os.W_OK):
         DATA_DIR = "/data"
     else:
-        DATA_DIR = os.path.dirname(__file__)
-os.makedirs(DATA_DIR, exist_ok=True)
+        DATA_DIR = BASE_DIR
+
+if DATA_DIR:
+    os.makedirs(DATA_DIR, exist_ok=True)
+
 DB_PATH = os.path.join(DATA_DIR, "danyaclient.db")
+
+# Seed initial database from repository if volume is freshly mounted
+default_db = os.path.join(BASE_DIR, "danyaclient.db")
+if DATA_DIR != BASE_DIR and not os.path.exists(DB_PATH) and os.path.exists(default_db):
+    try:
+        shutil.copy2(default_db, DB_PATH)
+    except Exception:
+        pass
 
 BACKUP_SECRET_KEY = os.environ.get(
     "BACKUP_SECRET_KEY", 
@@ -293,8 +307,8 @@ async def security_headers_middleware(request: Request, call_next):
         response.headers["Pragma"] = "no-cache"
     return response
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 def get_current_user(request: Request) -> Optional[dict]:
     session_token = request.cookies.get("danyaclient_session") or request.cookies.get("recoin_session")
@@ -1069,5 +1083,9 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    raw_port = os.environ.get("PORT", "8000")
+    try:
+        port = int(raw_port)
+    except (ValueError, TypeError):
+        port = 8000
+    uvicorn.run("main:app", host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
