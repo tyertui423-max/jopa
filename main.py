@@ -618,6 +618,141 @@ async def api_logout(request: Request, response: Response):
     response.delete_cookie(key="recoin_session")
     return {"status": "ok", "message": "Logged out successfully"}
 
+# ==============================================================================
+# LOADER AUTHENTICATION & HWID VERIFICATION API
+# ==============================================================================
+
+class LoaderAuthPayload(BaseModel):
+    username: str
+    password: str
+    hwid: Optional[str] = None
+
+class LoaderVerifyPayload(BaseModel):
+    username: str
+    session_token: Optional[str] = None
+    hwid: Optional[str] = None
+
+@app.post("/api/loader/login")
+@app.post("/api/client/auth")
+async def api_loader_login(payload: LoaderAuthPayload, request: Request):
+    client_ip = security.get_client_ip(request)
+    security.check_login_allowed(client_ip)
+
+    username = payload.username.strip()
+    password = payload.password
+    incoming_hwid = (payload.hwid or "").strip()
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM users WHERE username = ? OR email = ?", (username, username.lower()))
+    user = cursor.fetchone()
+
+    if not user:
+        conn.close()
+        security.record_failed_login(client_ip)
+        raise HTTPException(status_code=400, detail="Неверный логин или пароль")
+
+    if user["is_banned"] == 1:
+        conn.close()
+        reason = user["ban_reason"] or "Нарушение правил проекта"
+        raise HTTPException(status_code=403, detail=f"Ваш аккаунт заблокирован: {reason}")
+
+    check_hash, _ = hash_password(password, user["salt"])
+    if check_hash != user["password_hash"]:
+        conn.close()
+        security.record_failed_login(client_ip)
+        raise HTTPException(status_code=400, detail="Неверный логин или пароль")
+
+    # Subscription check
+    user_dict = dict(user)
+    if not is_subscription_active(user_dict):
+        conn.close()
+        raise HTTPException(status_code=403, detail="No Active Subscribe")
+
+    # HWID check and binding
+    if not incoming_hwid:
+        conn.close()
+        raise HTTPException(status_code=400, detail="HWID not provided")
+
+    stored_hwid = user["hwid"]
+    if stored_hwid is None or str(stored_hwid).strip() in ["", "None", "—", "-"]:
+        # First login with active subscription -> automatically bind HWID
+        cursor.execute("UPDATE users SET hwid = ? WHERE id = ?", (incoming_hwid, user["id"]))
+        conn.commit()
+        bound_hwid = incoming_hwid
+    else:
+        # Verify HWID match
+        if stored_hwid.strip().upper() != incoming_hwid.upper():
+            conn.close()
+            raise HTTPException(status_code=403, detail="HWID mismatched")
+        bound_hwid = stored_hwid
+
+    security.record_successful_login(client_ip)
+    session_token = secrets.token_urlsafe(32)
+    cursor.execute("INSERT INTO sessions (session_token, user_id) VALUES (?, ?)", (session_token, user["id"]))
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "message": "Authorized",
+        "username": user["username"],
+        "role": user["role"],
+        "subscription": user["subscription"],
+        "subscription_until": user["subscription_until"],
+        "hwid": bound_hwid,
+        "session_token": session_token
+    }
+
+@app.post("/api/loader/verify")
+@app.post("/api/client/verify")
+async def api_loader_verify(payload: LoaderVerifyPayload):
+    username = payload.username.strip()
+    incoming_hwid = (payload.hwid or "").strip()
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM users WHERE username = ? OR email = ?", (username, username.lower()))
+    user = cursor.fetchone()
+
+    if not user:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if user["is_banned"] == 1:
+        conn.close()
+        reason = user["ban_reason"] or "Нарушение правил проекта"
+        raise HTTPException(status_code=403, detail=f"Ваш аккаунт заблокирован: {reason}")
+
+    user_dict = dict(user)
+    if not is_subscription_active(user_dict):
+        conn.close()
+        raise HTTPException(status_code=403, detail="No Active Subscribe")
+
+    stored_hwid = user["hwid"]
+    if stored_hwid and str(stored_hwid).strip() not in ["", "None", "—", "-"]:
+        if incoming_hwid and stored_hwid.strip().upper() != incoming_hwid.upper():
+            conn.close()
+            raise HTTPException(status_code=403, detail="HWID mismatched")
+    elif incoming_hwid:
+        cursor.execute("UPDATE users SET hwid = ? WHERE id = ?", (incoming_hwid, user["id"]))
+        conn.commit()
+        stored_hwid = incoming_hwid
+
+    conn.close()
+    return {
+        "status": "ok",
+        "username": user["username"],
+        "role": user["role"],
+        "subscription": user["subscription"],
+        "subscription_until": user["subscription_until"],
+        "hwid": stored_hwid
+    }
+
 class ActivateKeyPayload(BaseModel):
     key: str
     key_type: str = "subscription"
