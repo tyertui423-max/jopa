@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, Response, Form, HTTPException, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -315,6 +316,14 @@ class SecurityManager:
 security = SecurityManager()
 
 app = FastAPI(title="DanyaClient Gaming Client Portal", version="1.0.0", docs_url="/api/docs", redoc_url=None)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
