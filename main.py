@@ -762,6 +762,64 @@ async def api_loader_verify(payload: LoaderVerifyPayload):
         "hwid": stored_hwid
     }
 
+class HwidCheckPayload(BaseModel):
+    hwid: Optional[str] = None
+
+@app.post("/api/client/hwid-check")
+@app.get("/api/client/hwid-check")
+async def api_client_hwid_check(request: Request, payload: Optional[HwidCheckPayload] = None, hwid: Optional[str] = None):
+    target_hwid = ""
+    if payload and payload.hwid:
+        target_hwid = payload.hwid.strip()
+    elif hwid:
+        target_hwid = hwid.strip()
+    elif request.query_params.get("hwid"):
+        target_hwid = request.query_params.get("hwid").strip()
+
+    if not target_hwid:
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "allowed": False, "detail": "HWID not provided"}
+        )
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM users WHERE UPPER(hwid) = UPPER(?)", (target_hwid,))
+    user = cursor.fetchone()
+    conn.close()
+
+    if not user:
+        return JSONResponse(
+            status_code=403,
+            content={"status": "error", "allowed": False, "detail": "HWID not registered on site"}
+        )
+
+    if user["is_banned"] == 1:
+        reason = user["ban_reason"] or "Нарушение правил проекта"
+        return JSONResponse(
+            status_code=403,
+            content={"status": "error", "allowed": False, "detail": f"Account banned: {reason}"}
+        )
+
+    user_dict = dict(user)
+    if not is_subscription_active(user_dict):
+        return JSONResponse(
+            status_code=403,
+            content={"status": "error", "allowed": False, "detail": "No Active Subscribe"}
+        )
+
+    return {
+        "status": "ok",
+        "allowed": True,
+        "username": user["username"],
+        "role": user["role"],
+        "subscription": user["subscription"],
+        "subscription_until": user["subscription_until"],
+        "hwid": target_hwid
+    }
+
 class ActivateKeyPayload(BaseModel):
     key: str
     key_type: str = "subscription"
